@@ -68,9 +68,9 @@ def classify_stage(flag_list):
 for i in range(len(leaf)):
 
     # leaf centroid
-    x = leaf["x_cen"][i]
-    y = leaf["y_cen"][i]
-    z = leaf["v_cen"][i] / 1000  # m/s → km/s
+    x = leaf["cen_l"][i]
+    y = leaf["cen_b"][i]
+    z = leaf["cen_v"][i] / 1000  # m/s → km/s
 
     # matching ellipsoid
     rx = (leaf["Lsize"][i] / 2 + 5) * 0.0017  # deg
