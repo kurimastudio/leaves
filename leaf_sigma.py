@@ -5,10 +5,13 @@ from astropy.io import fits
 from spectral_cube import SpectralCube
 import astropy.units as u
 
-os.chdir("/home/kurima/Data/v5")
-
-
 os.chdir('/data/yuwei/v5')
+
+# ============================
+# SETTINGS
+# ============================
+CHANNEL_WIDTH = 0.5  # km/s for CHIMPS2
+SIGMA_CHAN = CHANNEL_WIDTH / np.sqrt(12.0)
 
 # ============================
 # LOAD CATALOG
@@ -47,13 +50,10 @@ for reg in regions:
     data = cube.filled_data[:].value   # shape = (nv, ny, nx)
     data = np.asarray(data, dtype=np.float64)
 
-    # Replace non-finite and negative intensities
+    # Replace only non-finite values
     bad = ~np.isfinite(data)
     if np.any(bad):
-        data[bad] = 0.0
-
-    # Optional: clip negative noise values
-    data[data < 0] = 0.0
+        data[bad] = np.nan
 
     if data.shape != labels.shape:
         print(f"  ⚠ Shape mismatch: cube {data.shape}, labels {labels.shape}")
@@ -64,17 +64,16 @@ for reg in regions:
     # ----------------------------
     # Flatten arrays
     # ----------------------------
+    nv, ny, nx = data.shape
     lab_flat = labels.ravel()
     I_flat   = data.ravel()
-
-    # Build velocity cube lazily via repeat
-    nv, ny, nx = data.shape
-    v_flat = np.repeat(vel, ny * nx)
+    v_flat   = np.repeat(vel, ny * nx)
 
     # ----------------------------
-    # Keep only labeled voxels with positive intensity
+    # Keep only labeled finite voxels
+    # IMPORTANT: do NOT clip negatives
     # ----------------------------
-    good = (lab_flat > 0) & np.isfinite(I_flat) & (I_flat > 0)
+    good = (lab_flat > 0) & np.isfinite(I_flat)
 
     if not np.any(good):
         print("  ⚠ No valid labeled voxels in this region")
@@ -100,7 +99,14 @@ for reg in regions:
 
     # Numerical cleanup
     var_all[var_all < 0] = 0.0
-    sig_all = np.sqrt(var_all)
+    sig_meas = np.sqrt(var_all)
+
+    # ----------------------------
+    # Channel-width correction
+    # ----------------------------
+    var_corr = var_all - SIGMA_CHAN**2
+    var_corr[var_corr < 0] = 0.0
+    sig_corr = np.sqrt(var_corr)
 
     # ----------------------------
     # Write back to catalog
@@ -116,11 +122,17 @@ for reg in regions:
     )
 
     v_cent[idxs[valid_leaf]]  = v0_all[leaf_ids[valid_leaf]]
-    sigma_v[idxs[valid_leaf]] = sig_all[leaf_ids[valid_leaf]]
+    sigma_v[idxs[valid_leaf]] = sig_corr[leaf_ids[valid_leaf]]
 
-    print(f"  ✓ assigned {np.sum(valid_leaf)} / {len(idxs)} leaves")
-    print(f"  sigma_v range in region: "
-          f"{np.nanmin(sig_all[1:]):.3f} to {np.nanmax(sig_all[1:]):.3f} km/s")
+    used = (np.arange(len(S0)) > 0) & np.isfinite(S0) & (S0 > 0)
+    if np.any(used):
+        print(f"  ✓ assigned {np.sum(valid_leaf)} / {len(idxs)} leaves")
+        print(f"  measured sigma_v range: "
+              f"{np.nanmin(sig_meas[used]):.3f} to {np.nanmax(sig_meas[used]):.3f} km/s")
+        print(f"  corrected sigma_v range: "
+              f"{np.nanmin(sig_corr[used]):.3f} to {np.nanmax(sig_corr[used]):.3f} km/s")
+    else:
+        print(f"  ⚠ No usable leaves found in region {reg}")
 
 # ============================
 # SAVE
@@ -130,14 +142,3 @@ cat["v_centroid"] = v_cent
 cat.write("leaf_catalog_sigma_v0.fits", overwrite=True)
 
 print("\n🎉 DONE -> leaf_catalog_sigma_v0.fits\n")
-
-
-
-
-
-
-
-
-
-
-
