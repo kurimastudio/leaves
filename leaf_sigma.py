@@ -23,6 +23,8 @@ v_cent  = np.full(len(cat), np.nan, dtype=float)
 
 regions = np.unique(cat["REGION"])
 
+print(f"Using channel-width correction: sigma_chan = {SIGMA_CHAN:.3f} km/s")
+
 for reg in regions:
     print(f"\n🔹 REGION {reg}: computing sigma_v and v0")
 
@@ -50,7 +52,7 @@ for reg in regions:
     data = cube.filled_data[:].value   # shape = (nv, ny, nx)
     data = np.asarray(data, dtype=np.float64)
 
-    # Replace only non-finite values
+    # Keep negative values; only remove non-finite voxels
     bad = ~np.isfinite(data)
     if np.any(bad):
         data[bad] = np.nan
@@ -59,7 +61,7 @@ for reg in regions:
         print(f"  ⚠ Shape mismatch: cube {data.shape}, labels {labels.shape}")
         continue
 
-    vel = cube.spectral_axis.to_value(u.km/u.s)   # shape = (nv,)
+    vel = cube.spectral_axis.to_value(u.km/u.s)
 
     # ----------------------------
     # Flatten arrays
@@ -70,8 +72,7 @@ for reg in regions:
     v_flat   = np.repeat(vel, ny * nx)
 
     # ----------------------------
-    # Keep only labeled finite voxels
-    # IMPORTANT: do NOT clip negatives
+    # Keep only labeled, finite voxels
     # ----------------------------
     good = (lab_flat > 0) & np.isfinite(I_flat)
 
@@ -92,7 +93,6 @@ for reg in regions:
     S1 = np.bincount(lab, weights=I * v, minlength=max_label + 1)
     S2 = np.bincount(lab, weights=I * v * v, minlength=max_label + 1)
 
-    # centroid and variance
     with np.errstate(divide='ignore', invalid='ignore'):
         v0_all = S1 / S0
         var_all = S2 / S0 - v0_all**2
